@@ -7,6 +7,8 @@ import tarfile
 import os
 import sklearn
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+
 
 # Configuring display settings
 plt.rcParams['figure.figsize'] = (12, 9)
@@ -257,6 +259,9 @@ print(general_data.info())
 # merge all datasets into a final dataset on EmployeeID
 final_dataset = pd.merge(general_data, employee_manager_data, on='EmployeeID')
 final_dataset = pd.merge(final_dataset, time_data, on='EmployeeID')
+
+# split dataset into training and testing sets
+train_set, test_set = train_test_split(final_dataset, test_size=0.2, random_state=42)
 
 # place the EmployeeID column at the front
 cols = final_dataset.columns.tolist()
