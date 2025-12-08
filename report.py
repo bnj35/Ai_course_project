@@ -349,29 +349,103 @@ print(pipeline_test.head())
 #learn and predict model
 ################################################
 import statsmodels.api as sm
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import mean_squared_error, r2_score
 
+# Logistic Regression
+
+# Check what Attrition-related columns exist after one-hot encoding
+attrition_cols = [col for col in pipeline_test.columns if 'Attrition' in col]
+# print(f"Attrition columns in pipeline_test: {attrition_cols}")
 
 # Definition of independent variables (X) and dependent variable (y)
-X = # TODO: define X based on the preprocessed dataset
-y = # TODO: define y based on the preprocessed dataset
+# After one-hot encoding with drop_first=True, Attrition becomes Attrition_Yes (with Attrition_No dropped)
+if 'Attrition_Yes' in pipeline_test.columns:
+    y = pipeline_test['Attrition_Yes']
+    X = pipeline_test.drop(columns=['EmployeeID', 'Attrition_Yes'])
+elif 'Attrition' in pipeline_test.columns:
+    y = pipeline_test['Attrition']
+    X = pipeline_test.drop(columns=['EmployeeID', 'Attrition'])
+else:
+    raise ValueError(f"No Attrition column found. Available columns: {pipeline_test.columns.tolist()}")
+
+# Convert all columns to numeric (one-hot encoded boolean columns need to be converted to 0/1)
+X = X.astype(float)
+y = y.astype(float)
+
+# Add bias term using concat to avoid fragmentation
+X = pd.concat([X, pd.DataFrame({'bias': 1}, index=X.index)], axis=1)
+
+# calculate theta using the Normal Equation
+theta_using_normal_equation = np.linalg.inv(X.T @ X) @ X.T @ y
+
+# predictions
+value_predictions = X.to_numpy() @ theta_using_normal_equation
 
 # add a constant to the model (intercept)
 X = sm.add_constant(X)
 # initialize and fit the model
 model = sm.OLS(y, X).fit()
 
-# verification
-print(model.summary())
-
 # Try another model from sklearn
-A = #TODO: define A based on the preprocessed dataset
-B = #TODO: define B based on the preprocessed dataset
+# Use the same target variable identified above
+if 'Attrition_Yes' in pipeline_test.columns:
+    B = pipeline_test['Attrition_Yes']
+    A = pipeline_test.drop(columns=['EmployeeID', 'Attrition_Yes'])
+else:
+    B = pipeline_test['Attrition']
+    A = pipeline_test.drop(columns=['EmployeeID', 'Attrition'])
+
+# Convert to numeric types
+A = A.astype(float)
+B = B.astype(float)
 
 # initialize the model
-skmodel = LinearRegression()
+linear_model = LinearRegression()
 # fit the model
-skmodel.fit(A, B)
-# make predictions
-A["sklearn_preds"] = skmodel.predict(A)
+linear_model.fit(A, B)
+# make predictions - use concat to avoid fragmentation
+linear_preds = linear_model.predict(A)
+A = pd.concat([A, pd.DataFrame({'sklearn_preds': linear_preds}, index=A.index)], axis=1)
+
+A.head(15)
+
+# initialize the model
+logistic_model = LogisticRegression(max_iter=1000)
+# Drop the sklearn_preds column before fitting logistic model
+A_for_logistic = A.drop(columns=['sklearn_preds'])
+# fit the model
+logistic_model.fit(A_for_logistic, B)
+# make predictions - use concat to avoid fragmentation
+logistic_preds = logistic_model.predict(A_for_logistic)
+A = pd.concat([A, pd.DataFrame({'sklearn_logistic_preds': logistic_preds}, index=A.index)], axis=1)
+
+A.head(15)
+
+# query the model to obtain its intercept and coefficients
+log_intercept = logistic_model.intercept_
+log_coefficients = logistic_model.coef_
+# print("Logistic Regression Intercept:", log_intercept)
+# print("Logistic Regression Coefficients:", log_coefficients)
+
+linear_intercept = linear_model.intercept_
+linear_coefficients = linear_model.coef_
+# print("Intercept:", linear_intercept)
+# print("Coefficients:", linear_coefficients)
+
+
+#quality indicators
+mse = mean_squared_error(y, value_predictions)
+r2 = r2_score(y, value_predictions)
+print("Mean Squared Error (MSE):", mse)
+print("R-squared (R2) Score:", r2)
+
+lin_mse = mean_squared_error(B, linear_preds)
+lin_r2 = r2_score(B, linear_preds)
+print("Linear Regression Mean Squared Error (MSE):", lin_mse)
+print("Linear Regression R-squared (R2) Score:", lin_r2)
+
+log_mse = mean_squared_error(B, logistic_preds)
+log_r2 = r2_score(B, logistic_preds)
+print("Logistic Regression Mean Squared Error (MSE):", log_mse)
+print("Logistic Regression R-squared (R2) Score:", log_r2)
