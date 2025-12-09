@@ -56,7 +56,7 @@ for col in out_time_data.columns[1:]:
     out_time_data[col] = pd.to_datetime(out_time_data[col], format='%Y-%m-%d %H:%M:%S', errors='coerce')
 
 #function to remove columns depending on distinct values for relevance
-def remove_col_depending_on_distinct_values(df,start_threshold=0, end_threshold=1):
+def remove_col_depending_on_distinct_values(df, start_threshold=0, end_threshold=0):
     cols_to_remove = []
     for col in df.columns:
         if start_threshold <= df[col].nunique() <= end_threshold:
@@ -68,21 +68,48 @@ def remove_col_depending_on_distinct_values(df,start_threshold=0, end_threshold=
 time_data = pd.merge(in_time_data, out_time_data, on='EmployeeID', suffixes=('_in', '_out'))
 
 # create a new column for each day calculating the difference between out and in time in hours
-# use pd.concat to avoid DataFrame fragmentation
 hours_columns = {}
+day_of_week_columns = {}
 for day in in_time_days.intersection(out_time_days):
     hours_columns[f'{day}_hours'] = (time_data[f'{day}_out'] - time_data[f'{day}_in']).dt.total_seconds() / 3600.0
+    day_of_week_columns[f'{day}_day_of_week'] = time_data[f'{day}_in'].dt.dayofweek
 
+# use pd.concat to avoid DataFrame fragmentation
 # Concatenate all hours columns at once and create a new column called "duration_hours"
 time_data = pd.concat([time_data, pd.DataFrame(hours_columns, index=time_data.index)], axis=1)
+time_data = pd.concat([time_data, pd.DataFrame(day_of_week_columns, index=time_data.index)], axis=1)
 time_data['duration_hours'] = time_data[list(hours_columns.keys())].sum(axis=1)
 
-# remove columns with only one or 0 distinct values
-remove_col_depending_on_distinct_values(time_data, end_threshold=0)
+# aggregate by day of week
+day_of_week_counts = {}
+day_of_week_avg_hours = {}
 
-# remove all the day columns keeping only duration_hours and EmployeeID
-time_data = time_data[['EmployeeID', 'duration_hours']]
-# insert the hour work by day columns back to time_data
+for i in range(7): # 0=Monday through 6=Sunday
+    count_cols = [col for col in time_data.columns if col.endswith('_day_of_week')]
+    day_of_week_counts[f'worked_on_day_{i}'] = sum(
+        (time_data[col] == i).astype(int) for col in count_cols
+    )
+    
+    # avg hrs per day of week
+    total_hours = 0
+    for day in in_time_days.intersection(out_time_days):
+        day_col = f'{day}_day_of_week'
+        hours_col = f'{day}_hours'
+        if day_col in time_data.columns and hours_col in time_data.columns:
+            # only sum hours where the day of week matches
+            mask = time_data[day_col] == i
+            total_hours += time_data[hours_col].where(mask, 0)
+    day_of_week_avg_hours[f'avg_hours_day_{i}'] = total_hours / day_of_week_counts[f'worked_on_day_{i}'].replace(0, 1)
+
+time_data = pd.concat([time_data, pd.DataFrame(day_of_week_counts, index=time_data.index)], axis=1)
+time_data = pd.concat([time_data, pd.DataFrame(day_of_week_avg_hours, index=time_data.index)], axis=1)
+
+# remove columns with 0 distinct values
+remove_col_depending_on_distinct_values(time_data)
+
+# keep only columns: EmployeeID, duration_hours, worked_on_day_*, avg_hours_day_*
+cols_to_keep = ['EmployeeID', 'duration_hours'] + [col for col in time_data.columns if col.startswith('worked_on_day_') or col.startswith('avg_hours_day_')]
+time_data = time_data[cols_to_keep]
 time_data = pd.concat([time_data, pd.DataFrame(hours_columns, index=time_data.index)], axis=1)
 
 ##############################
@@ -95,7 +122,7 @@ def preprocess_data(dataset, impute_values=True, numeric_cols=None, categorical_
     data = dataset.copy()
     # remove constant columns
     if remove_constant_cols:
-        data = remove_col_depending_on_distinct_values(data,start_threshold=0, end_threshold=1)
+        data = remove_col_depending_on_distinct_values(data, end_threshold=1)
     # identify numerical and categorical columns if not provided
     if numeric_cols is None:
         numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
@@ -181,7 +208,7 @@ print(final_dataset.info())
 
 
 # Correlation verification between a target feature and others
-def correlation_with_target(data, target_column):
+def correlation_with_target(data, target_column, exclude_patterns=None):
     # Make a copy to avoid modifying original data
     data_copy = data.copy()
     
@@ -198,18 +225,40 @@ def correlation_with_target(data, target_column):
     # Select only numeric columns for correlation
     numeric_data = data_copy.select_dtypes(include=[np.number])
     
-    # Check if target column exists in numeric data
+    # remove constant numeric or NaN
+    const_cols = [col for col in numeric_data.columns if col != target_column and numeric_data[col].nunique(dropna=True) <= 1]
+    if const_cols:
+        numeric_data = numeric_data.drop(columns=const_cols)
+    
     if target_column not in numeric_data.columns:
         raise ValueError(f"Target column '{target_column}' could not be converted to numeric or does not exist")
     
     correlation = numeric_data.corr()[target_column].sort_values(ascending=False)
     
+    if exclude_patterns:
+        filtered_correlation = correlation[~correlation.index.str.contains('|'.join(exclude_patterns), regex=True)]
+    else:
+        filtered_correlation = correlation
+    
     corelation_ordered = correlation.index.tolist()
-    return corelation_ordered, correlation
+    return corelation_ordered, correlation, filtered_correlation
 
-# order dataset columns based on correlation with target 'Attrition'
-ordered_cols, corr_values = correlation_with_target(final_dataset, 'Attrition')
-print(f"Top 10 correlated features with Attrition:\n{corr_values.head(10)}")
+ordered_cols, corr_values, filtered_corr = correlation_with_target(
+    final_dataset, 
+    "Attrition",
+    exclude_patterns=["Attrition", r'\d{4}-\d{2}-\d{2}_hours', r'avg_hours_day_\d+', r'worked_on_day_\d+']
+)
+
+
+#########
+# Display
+#########
+
+print(f"\nTop 10 correlated features with Attrition:\n{filtered_corr.head(10)}")
+
+day_of_week_corr = corr_values[[col for col in corr_values.index if 'day' in col and ('worked_on' in col or 'avg_hours' in col)]]
+if len(day_of_week_corr) > 0:
+    print(f"\nDay-of-week correlations with Attrition:\n{day_of_week_corr}")
 
 final_dataset = final_dataset[ordered_cols]
 
