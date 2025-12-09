@@ -7,25 +7,7 @@ import tarfile
 import os
 import sklearn
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
 
-
-# Configuring display settings
-plt.rcParams['figure.figsize'] = (12, 9)
-sns.set()
-sns.set_context('talk')
-np.set_printoptions(threshold=20, precision=2, suppress=True)
-pd.set_option('display.max_rows', 30)
-pd.set_option('display.max_columns', None)
-pd.set_option('display.precision', 2)
-pd.set_option('display.float_format', '{:.2f}'.format)
-warnings.filterwarnings("ignore", category=FutureWarning)
-
-##############################################################
-#import files
-##############################################################
-
-# Extract the .tgz file (use a local directory to avoid /mnt permission issues)
 folder_path = 'data/'
 employee_file_name = 'employee_survey_data.csv'
 general_file_name = 'general_data.csv'
@@ -42,22 +24,10 @@ manager_data = pd.read_csv(os.path.join(folder_path, manager_file_name))
 in_time_data = pd.read_csv(os.path.join(folder_path, time_folder_path, in_time_file_name))
 out_time_data = pd.read_csv(os.path.join(folder_path, time_folder_path, out_time_file_name))
 
-#display the info of each dataset
 
-# print("Employee Data Info:")
-# print(employee_data.info())
-# print("\nGeneral Data Info:")
-# print(general_data.info())
-# print("\nManager Data Info:")
-# print(manager_data.info())
-# print("\nIn Time Data Info:")
-# print(in_time_data.info())
-# print("\nOut Time Data Info:")
-# print(out_time_data.info())
-
-################################################
-#Clean and merge hour datasets
-################################################
+##############################
+# TIME
+##############################
 
 # merge in_time and out_time data on the first column (Unknown that is actually EmployeeID)
 # rename the first column to EmployeeID for both datasets because it is unnamed
@@ -115,177 +85,12 @@ time_data = time_data[['EmployeeID', 'duration_hours']]
 # insert the hour work by day columns back to time_data
 time_data = pd.concat([time_data, pd.DataFrame(hours_columns, index=time_data.index)], axis=1)
 
-print(time_data.describe())
-
-################################################
-#Clean Manager Data
-################################################
-
-# merge employee and manager data on EmployeeID
-employee_manager_data = pd.merge(employee_data, manager_data, on='EmployeeID', suffixes=('_emp', '_mgr'))
-
-remove_col_depending_on_distinct_values(employee_manager_data)
-
-#verification
-# print(employee_manager_data.info())
-
-################################################
-#Clean General Data
-################################################
-
-col_before = general_data.columns.tolist()
-remove_col_depending_on_distinct_values(general_data)
-col_after = general_data.columns.tolist()
-removed_cols = set(col_before) - set(col_after)
-print(f"Removed columns: {removed_cols}")
-# print(general_data.info())
-
-################################################
-#Get numeric and categorical columns
-################################################
-
-# get numerical and categorical columns for each dataset
-#general data
-general_numerical_cols = general_data.select_dtypes(include=[np.number]).columns.tolist()
-general_categorical_cols = general_data.select_dtypes(include=['object']).columns.tolist()
-#time data
-time_numerical_cols = time_data.select_dtypes(include=[np.number, np.datetime64]).columns.tolist()
-#in_time data
-# in_time_numerical_cols = in_time_data.select_dtypes(include=[np.number, np.datetime64]).columns.tolist()
-#out_time data
-# out_time_numerical_cols = out_time_data.select_dtypes(include=[np.number, np.datetime64]).columns.tolist()
-
-#only numerical
-#employee_manager data
-employee_manager_numerical_cols = employee_manager_data.select_dtypes(include=[np.number]).columns.tolist()
-#manager data
-manager_numerical_cols = manager_data.select_dtypes(include=[np.number]).columns.tolist()
-#employee data
-employee_numerical_cols = employee_data.select_dtypes(include=[np.number]).columns.tolist()
-
-#print the numerical and categorical columns for each dataset
-#print("General Data Numerical Columns:", general_numerical_cols)
-#print("General Data Categorical Columns:", general_categorical_cols)
-#print("Employee Data Numerical Columns:", employee_numerical_cols)
-#print("In Time Data Numerical Columns:", in_time_numerical_cols)
-#print("In Time Data Categorical Columns:", in_time_categorical_cols)
-#print("Out Time Data Numerical Columns:", out_time_numerical_cols)
-# print("Out Time Data Categorical Columns:", out_time_categorical_cols)
-#print("Manager Data Numerical Columns:", manager_numerical_cols)
-# print(time_numerical_cols)
-
-
-#################################################
-#Imputation
-#################################################
-#imputing missing values for numerical columns with mean
-general_data[general_numerical_cols] = general_data[general_numerical_cols].fillna(general_data[general_numerical_cols].median())
-employee_data[employee_numerical_cols] = employee_data[employee_numerical_cols].fillna(employee_data[employee_numerical_cols].median())
-# in_time_data[in_time_numerical_cols] = in_time_data[in_time_numerical_cols].fillna(in_time_data[in_time_numerical_cols].median())
-# out_time_data[out_time_numerical_cols] = out_time_data[out_time_numerical_cols].fillna(out_time_data[out_time_numerical_cols].median())
-manager_data[manager_numerical_cols] = manager_data[manager_numerical_cols].fillna(manager_data[manager_numerical_cols].median())
-
-
-#imputing missing values for categorical columns with mode
-general_data[general_categorical_cols] = general_data[general_categorical_cols].fillna(general_data[general_categorical_cols].mode().iloc[0])
-
-#verify no missing values remain 
-# print("Missing values in General Data:\n", general_data.isnull().sum())
-# print("Missing values in Employee Data:\n", employee_data.isnull().sum())
-# print("Missing values in Manager Data:\n", manager_data.isnull().sum())
-# print("Missing values in In Time Data:\n", in_time_data.isnull().sum())
-# print("Missing values in Out Time Data:\n", out_time_data.isnull().sum())
-
-#################################################
-#Standardization and Encoding
-#################################################
-
-# Initialize the StandardScaler
-# scaler = StandardScaler(with_mean=True)
-# # Scale numerical columns
-# general_data[general_numerical_cols] = scaler.fit_transform(general_data[general_numerical_cols])
-# employee_data[employee_numerical_cols] = scaler.fit_transform(employee_data[employee_numerical_cols])
-# manager_data[manager_numerical_cols] = scaler.fit_transform(manager_data[manager_numerical_cols])
-
-#display the first few rows of each dataset after preprocessing
-# print("Employee Data after preprocessing:")
-# print(employee_data.head())
-# print("\nGeneral Data after preprocessing:")
-# print(general_data.head())
-# print("\nManager Data after preprocessing:")
-# print(manager_data.head())
-# print("\nIn Time Data after preprocessing:")
-# print(in_time_data.head())
-# print("\nOut Time Data after preprocessing:")
-# print(out_time_data.head())
-
-##################################################
-#encoding 
-##################################################
-
-# find unique values in BusinessTravel column
-print( general_data['BusinessTravel'].unique())
-
-# Define the order for ordinal encoding (only category names, no numeric values)
-# categories parameter needs to be a list of lists - one list per feature
-business_travel_categories = [['Non-Travel', 'Travel_Rarely', 'Travel_Frequently']]
-# ordinal encoding for categorical columns
-general_data['BusinessTravel'] = pd.Categorical(general_data['BusinessTravel'], categories=business_travel_categories[0], ordered=True).codes
-# remove 'BusinessTravel' from categorical columns list as it has been ordinal encoded
-general_categorical_cols.remove('BusinessTravel')
-# add 'BusinessTravel' to numerical columns list
-general_numerical_cols.append('BusinessTravel')
-
-# hot one encoding for categorical columns
-general_data = pd.get_dummies(general_data, columns=general_categorical_cols, drop_first=True)
-
-
-print("Categorical columns in General Data after Ordinal Encoding:")
-
-# verify the new info of general_data
-print(general_data.info())
-
-
-# # in_time out_time not categorical or not using like that 
-
-# # in_time_data = pd.get_dummies(in_time_data, columns=in_time_categorical_cols, drop_first=True)
-# # out_time_data = pd.get_dummies(out_time_data, columns=out_time_categorical_cols, drop_first=True)
-
-
-###################################################
-#merge all datasets
-###################################################
-
-# merge all datasets into a final dataset on EmployeeID
-final_dataset = pd.merge(general_data, employee_manager_data, on='EmployeeID')
-final_dataset = pd.merge(final_dataset, time_data, on='EmployeeID')
-
-# split dataset into training and testing sets
-train_set, test_set = train_test_split(final_dataset, test_size=0.2, random_state=42)
-
-# place the EmployeeID column at the front
-cols = final_dataset.columns.tolist()
-cols.insert(0, cols.pop(cols.index('EmployeeID')))
-final_dataset = final_dataset[cols]
-
-# print to verify 
-
-print(final_dataset.info())
-print(final_dataset.head())
-
-####################################################
-#Pipeline function
-####################################################
-
-test_business_travel_categories = [['Non-Travel', 'Travel_Rarely', 'Travel_Frequently']]
-
-dictionary_for_encoding = {
-    'BusinessTravel': test_business_travel_categories[0]
-}
-
+##############################
+#Pipeline
+##############################
 
 # pipeline with all steps included above as parameters for easy reuse
-def preprocess_data(dataset, impute_values=True, numeric_cols=None, categorical_cols=None, scale_data=True, encode_ordinal_cols=None, encode_onehot_cols=True, remove_constant_cols=True):
+def preprocess_data(dataset, impute_values=True, numeric_cols=None, categorical_cols=None, scale_data=True, encode_ordinal_cols=None, encode_onehot_cols=True, remove_constant_cols=True, remove_from_encoding=[]):
     #copy the dataset to avoid modifying the original data
     data = dataset.copy()
     # remove constant columns
@@ -321,6 +126,9 @@ def preprocess_data(dataset, impute_values=True, numeric_cols=None, categorical_
         else:
             cols_to_encode = encode_onehot_cols
         
+        # Remove columns specified in remove_from_encoding
+        cols_to_encode = [col for col in cols_to_encode if col not in remove_from_encoding]
+        
         if len(cols_to_encode) > 0:
             data = pd.get_dummies(data, columns=cols_to_encode, drop_first=True)
     # scale numerical data
@@ -330,122 +138,79 @@ def preprocess_data(dataset, impute_values=True, numeric_cols=None, categorical_
     
     return data
 
-# Load fresh data for testing the pipeline
-test_dataset = pd.read_csv(os.path.join(folder_path, general_file_name))
 
-pipeline_test = preprocess_data(test_dataset,
-                                    remove_constant_cols=True,
-                                    impute_values=True,
-                                    scale_data=True,
-                                    encode_onehot_cols=True,
-                                    encode_ordinal_cols=dictionary_for_encoding
-                                    )
+##############################
+#merge
+##############################
 
+from sklearn.model_selection import train_test_split
+# merge employee and manager data first
+employee_manager_data = pd.merge(employee_data, manager_data, on='EmployeeID', suffixes=('_emp', '_mgr'))
+# merge all datasets into a final dataset on EmployeeID
+final_dataset = pd.merge(general_data, employee_manager_data, on='EmployeeID')
+final_dataset = pd.merge(final_dataset, time_data, on='EmployeeID')
 
-print(pipeline_test.info())
-print(pipeline_test.head())
+# split dataset into training and testing sets
+train_set, test_set = train_test_split(final_dataset, test_size=0.2, random_state=42)
 
-################################################
-#learn and predict model
-################################################
-import statsmodels.api as sm
-from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.metrics import mean_squared_error, r2_score
+# place the EmployeeID column at the front
+cols = final_dataset.columns.tolist()
+cols.insert(0, cols.pop(cols.index('EmployeeID')))
+final_dataset = final_dataset[cols]
 
-# Logistic Regression
+# print to verify 
 
-# Check what Attrition-related columns exist after one-hot encoding
-attrition_cols = [col for col in pipeline_test.columns if 'Attrition' in col]
-# print(f"Attrition columns in pipeline_test: {attrition_cols}")
+# print(final_dataset.info())
+# print(final_dataset.head())
 
-# Definition of independent variables (X) and dependent variable (y)
-# After one-hot encoding with drop_first=True, Attrition becomes Attrition_Yes (with Attrition_No dropped)
-if 'Attrition_Yes' in pipeline_test.columns:
-    y = pipeline_test['Attrition_Yes']
-    X = pipeline_test.drop(columns=['EmployeeID', 'Attrition_Yes'])
-elif 'Attrition' in pipeline_test.columns:
-    y = pipeline_test['Attrition']
-    X = pipeline_test.drop(columns=['EmployeeID', 'Attrition'])
-else:
-    raise ValueError(f"No Attrition column found. Available columns: {pipeline_test.columns.tolist()}")
-
-# Convert all columns to numeric (one-hot encoded boolean columns need to be converted to 0/1)
-X = X.astype(float)
-y = y.astype(float)
-
-# Add bias term using concat to avoid fragmentation
-X = pd.concat([X, pd.DataFrame({'bias': 1}, index=X.index)], axis=1)
-
-# calculate theta using the Normal Equation
-theta_using_normal_equation = np.linalg.inv(X.T @ X) @ X.T @ y
-
-# predictions
-value_predictions = X.to_numpy() @ theta_using_normal_equation
-
-# add a constant to the model (intercept)
-X = sm.add_constant(X)
-# initialize and fit the model
-model = sm.OLS(y, X).fit()
-
-# Try another model from sklearn
-# Use the same target variable identified above
-if 'Attrition_Yes' in pipeline_test.columns:
-    B = pipeline_test['Attrition_Yes']
-    A = pipeline_test.drop(columns=['EmployeeID', 'Attrition_Yes'])
-else:
-    B = pipeline_test['Attrition']
-    A = pipeline_test.drop(columns=['EmployeeID', 'Attrition'])
-
-# Convert to numeric types
-A = A.astype(float)
-B = B.astype(float)
-
-# initialize the model
-linear_model = LinearRegression()
-# fit the model
-linear_model.fit(A, B)
-# make predictions - use concat to avoid fragmentation
-linear_preds = linear_model.predict(A)
-A = pd.concat([A, pd.DataFrame({'sklearn_preds': linear_preds}, index=A.index)], axis=1)
-
-A.head(15)
-
-# initialize the model
-logistic_model = LogisticRegression(max_iter=1000)
-# Drop the sklearn_preds column before fitting logistic model
-A_for_logistic = A.drop(columns=['sklearn_preds'])
-# fit the model
-logistic_model.fit(A_for_logistic, B)
-# make predictions - use concat to avoid fragmentation
-logistic_preds = logistic_model.predict(A_for_logistic)
-A = pd.concat([A, pd.DataFrame({'sklearn_logistic_preds': logistic_preds}, index=A.index)], axis=1)
-
-A.head(15)
-
-# query the model to obtain its intercept and coefficients
-log_intercept = logistic_model.intercept_
-log_coefficients = logistic_model.coef_
-# print("Logistic Regression Intercept:", log_intercept)
-# print("Logistic Regression Coefficients:", log_coefficients)
-
-linear_intercept = linear_model.intercept_
-linear_coefficients = linear_model.coef_
-# print("Intercept:", linear_intercept)
-# print("Coefficients:", linear_coefficients)
+#into pipeline
+preprocess_data(final_dataset,
+                impute_values=True,
+                scale_data=True,
+                encode_onehot_cols=True,
+                remove_constant_cols=True,
+                remove_from_encoding=['Attrition']
+                )
 
 
-#quality indicators
-mse = mean_squared_error(y, value_predictions)
-r2 = r2_score(y, value_predictions)
-print("Mean Squared Error (MSE):", mse)
-print("R-squared (R2) Score:", r2)
+##############################
+#Correlation verification
+##############################
 
-lin_mse = mean_squared_error(B, linear_preds)
-lin_r2 = r2_score(B, linear_preds)
-print("Linear Regression Mean Squared Error (MSE):", lin_mse)
-print("Linear Regression R-squared (R2) Score:", lin_r2)
+print(final_dataset.info())
 
-log_mse = mean_squared_error(B, logistic_preds)
-log_r2 = r2_score(B, logistic_preds)
-print("Logistic Regression Mean Squared Error (MSE):", log_mse)
-print("Logistic Regression R-squared (R2) Score:", log_r2)
+
+# Correlation verification between a target feature and others
+def correlation_with_target(data, target_column):
+    # Make a copy to avoid modifying original data
+    data_copy = data.copy()
+    
+    # If target column is not numeric, try to encode it
+    if target_column in data_copy.columns and data_copy[target_column].dtype == 'object':
+        # Map Yes/No to 1/0, or use label encoding for other categorical values
+        unique_vals = data_copy[target_column].unique()
+        if set(unique_vals).issubset({'Yes', 'No', np.nan}):
+            data_copy[target_column] = data_copy[target_column].map({'Yes': 1, 'No': 0})
+        else:
+            # For other categorical values, use numeric encoding
+            data_copy[target_column] = pd.Categorical(data_copy[target_column]).codes
+    
+    # Select only numeric columns for correlation
+    numeric_data = data_copy.select_dtypes(include=[np.number])
+    
+    # Check if target column exists in numeric data
+    if target_column not in numeric_data.columns:
+        raise ValueError(f"Target column '{target_column}' could not be converted to numeric or does not exist")
+    
+    correlation = numeric_data.corr()[target_column].sort_values(ascending=False)
+    
+    corelation_ordered = correlation.index.tolist()
+    return corelation_ordered, correlation
+
+# order dataset columns based on correlation with target 'Attrition'
+ordered_cols, corr_values = correlation_with_target(final_dataset, 'Attrition')
+print(f"Top 10 correlated features with Attrition:\n{corr_values.head(10)}")
+
+final_dataset = final_dataset[ordered_cols]
+
+print(final_dataset.info())
