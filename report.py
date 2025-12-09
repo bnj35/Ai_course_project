@@ -254,7 +254,27 @@ ordered_cols, corr_values, filtered_corr = correlation_with_target(
 # Display
 #########
 
-print(f"\nTop 10 correlated features with Attrition:\n{filtered_corr.head(10)}")
+# positive correlation
+positive_corr = filtered_corr[filtered_corr > 0]
+# negative correlation
+negative_corr = filtered_corr[filtered_corr < 0]
+
+def order_correlation(corr_series , ascending=False):
+    absolute_corr = corr_series.abs()
+    ordered_corr = absolute_corr.sort_values(ascending=ascending)
+    return ordered_corr
+
+
+positive_ordered_corr = order_correlation(positive_corr, ascending=False)
+negative_ordered_corr = order_correlation(negative_corr, ascending=False)
+print(f"\nTop 10 positively correlated features with Attrition:\n{positive_ordered_corr}")
+print(f"\nTop 10 negatively correlated features with Attrition:\n{negative_ordered_corr}")
+
+absolute_filtered_corr = filtered_corr.abs()
+# ordered correlation by absolute value
+absolute_filtered_corr = absolute_filtered_corr.sort_values(ascending=False)
+
+print(f"\nTop 10 correlated features with Attrition:\n{absolute_filtered_corr.head(10)}")
 
 day_of_week_corr = corr_values[[col for col in corr_values.index if 'day' in col and ('worked_on' in col or 'avg_hours' in col)]]
 if len(day_of_week_corr) > 0:
