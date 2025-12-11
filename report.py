@@ -205,6 +205,76 @@ preprocess_data(final_dataset,
 ##############################
 
 print(final_dataset.info())
+from sklearn.feature_selection import f_classif, mutual_info_classif
+
+def correlation_anova_mutual_info_with_target(data, target_column, exclude_patterns=None):
+    """
+    Calculate feature importance using correlation (for numeric features), 
+    ANOVA F-statistic (for categorical features), or Mutual Information.
+    
+    Returns scores for each feature based on their relationship with the target.
+    """
+    # Make a copy to avoid modifying original data
+    data_copy = data.copy()
+    
+    # Check if target is categorical or numeric
+    target_is_categorical = data_copy[target_column].dtype == 'object' or data_copy[target_column].nunique() <= 10
+    
+    if target_is_categorical:
+        # Encode categorical target for classification methods
+        if data_copy[target_column].dtype == 'object':
+            unique_vals = data_copy[target_column].unique()
+            if set(unique_vals).issubset({'Yes', 'No', np.nan}):
+                data_copy[target_column] = data_copy[target_column].map({'Yes': 1, 'No': 0})
+            else:
+                data_copy[target_column] = pd.Categorical(data_copy[target_column]).codes
+        
+        y = data_copy[target_column]
+        scores = {}
+        
+        # Get numeric and categorical columns
+        numeric_cols = data_copy.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = [col for col in numeric_cols if col != target_column and data_copy[col].nunique(dropna=True) > 1]
+        
+        categorical_cols = data_copy.select_dtypes(include=['object']).columns.tolist()
+        
+        # For numeric features: use correlation or ANOVA F-statistic
+        for col in numeric_cols:
+            # Use absolute correlation as score
+            correlation = data_copy[[col, target_column]].corr().iloc[0, 1]
+            scores[col] = abs(correlation)
+        
+        # For categorical features: use ANOVA or Mutual Information
+        for col in categorical_cols:
+            # Encode categorical feature
+            encoded_col = pd.Categorical(data_copy[col]).codes
+            # Use mutual information for categorical vs categorical
+            mi_score = mutual_info_classif(encoded_col.values.reshape(-1, 1), y, random_state=42)[0]
+            scores[col] = mi_score
+    
+    else:
+        # Target is numeric - use correlation for all numeric features
+        numeric_data = data_copy.select_dtypes(include=[np.number])
+        const_cols = [col for col in numeric_data.columns if col != target_column and numeric_data[col].nunique(dropna=True) <= 1]
+        if const_cols:
+            numeric_data = numeric_data.drop(columns=const_cols)
+        
+        correlation = numeric_data.corr()[target_column].abs()
+        scores = correlation.to_dict()
+        del scores[target_column]  # Remove target from scores
+    
+    # Convert to Series and sort
+    scores_series = pd.Series(scores).sort_values(ascending=False)
+    
+    # Filter by patterns
+    if exclude_patterns:
+        filtered_scores = scores_series[~scores_series.index.str.contains('|'.join(exclude_patterns), regex=True)]
+    else:
+        filtered_scores = scores_series
+    
+    ordered_cols = scores_series.index.tolist()
+    return ordered_cols, scores_series, filtered_scores
+
 
 
 # Correlation verification between a target feature and others
@@ -243,11 +313,52 @@ def correlation_with_target(data, target_column, exclude_patterns=None):
     corelation_ordered = correlation.index.tolist()
     return corelation_ordered, correlation, filtered_correlation
 
-ordered_cols, corr_values, filtered_corr = correlation_with_target(
-    final_dataset, 
+# ordered_cols, corr_values, filtered_corr = correlation_with_target(
+#     final_dataset, 
+#     "Attrition",
+#     exclude_patterns=["Attrition", r'\d{4}-\d{2}-\d{2}_hours', r'avg_hours_day_\d+', r'worked_on_day_\d+']
+# )
+
+ordered_cols, corr_values, filtered_corr = correlation_anova_mutual_info_with_target(
+    final_dataset,
     "Attrition",
     exclude_patterns=["Attrition", r'\d{4}-\d{2}-\d{2}_hours', r'avg_hours_day_\d+', r'worked_on_day_\d+']
 )
+
+
+#########
+# Display
+#########
+
+# positive correlation
+positive_corr = filtered_corr[filtered_corr > 0]
+# negative correlation
+negative_corr = filtered_corr[filtered_corr < 0]
+
+def order_correlation(corr_series , ascending=False):
+    absolute_corr = corr_series.abs()
+    ordered_corr = absolute_corr.sort_values(ascending=ascending)
+    return ordered_corr
+
+
+positive_ordered_corr = order_correlation(positive_corr, ascending=False)
+negative_ordered_corr = order_correlation(negative_corr, ascending=False)
+# print(f"\nTop 10 positively correlated features with Attrition:\n{positive_ordered_corr}")
+# print(f"\nTop 10 negatively correlated features with Attrition:\n{negative_ordered_corr}")
+
+absolute_filtered_corr = filtered_corr.abs()
+# ordered correlation by absolute value
+absolute_filtered_corr = absolute_filtered_corr.sort_values(ascending=False)
+
+top_n_correlated = absolute_filtered_corr.where(absolute_filtered_corr > absolute_filtered_corr.mean(), None).dropna()
+print(f"\nTop {len(top_n_correlated)} correlated features with Attrition:\n{top_n_correlated}")
+
+day_of_week_corr = corr_values[[col for col in corr_values.index if 'day' in col and ('worked_on' in col or 'avg_hours' in col)]]
+if len(day_of_week_corr) > 0:
+    print(f"\nDay-of-week correlations with Attrition:\n{day_of_week_corr}")
+    
+
+final_dataset = final_dataset[ordered_cols]
 
 
 #########
