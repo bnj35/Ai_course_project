@@ -196,14 +196,7 @@ final_dataset = final_dataset[cols]
 
 #into pipeline
 ordinal_mappings = {
-    #shaun
-    'Education': ['Below College', 'College', 'Bachelor', 'Master', 'Doctor'],
-    'EnvironmentSatisfaction': ['Low', 'Medium', 'High', 'Very High'],
-    'JobInvolvement': ['Low', 'Medium', 'High', 'Very High'],
-    'JobSatisfaction': ['Low', 'Medium', 'High', 'Very High'],
-    'PerformanceRating': ['Low', 'Good', 'Excellent', 'Outstanding'],
-    'BusinessTravel': ['Non-Travel', 'Travel_Rarely', 'Travel_Frequently'],
-    'WorkLifeBalance': ['Bad', 'Good', 'Better', 'Best'],
+    'BusinessTravel': ['Non-Travel', 'Travel_Rarely', 'Travel_Frequently']
     }
 
 final_dataset = preprocess_data(final_dataset,
@@ -310,15 +303,15 @@ def order_correlation(corr_series , ascending=False):
 
 positive_ordered_corr = order_correlation(positive_corr, ascending=False)
 negative_ordered_corr = order_correlation(negative_corr, ascending=False)
-print(f"\npositively correlated features with Attrition:\n{positive_ordered_corr}")
-print(f"\nnegatively correlated features with Attrition:\n{negative_ordered_corr}")
+print(f"\npositively related features with Attrition:\n{positive_ordered_corr}")
+print(f"\nnegatively related features with Attrition:\n{negative_ordered_corr}")
 
 absolute_filtered_corr = filtered_corr.abs()
 # ordered correlation by absolute value
 absolute_filtered_corr = filtered_corr.sort_values(ascending=False)
 
-top_n_correlated = absolute_filtered_corr.where(absolute_filtered_corr > absolute_filtered_corr.mean(), None).dropna()
-print(f"\nTop {len(top_n_correlated)} correlated features with Attrition:\n{top_n_correlated}")
+top_n_related = absolute_filtered_corr.where(absolute_filtered_corr > absolute_filtered_corr.mean(), None).dropna()
+print(f"\nTop {len(top_n_related)} related features with Attrition:\n{top_n_related}")
 
 day_of_week_corr = corr_values[[col for col in corr_values.index if 'day' in col and ('worked_on' in col or 'avg_hours' in col)]]
 if len(day_of_week_corr) > 0:
