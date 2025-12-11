@@ -202,29 +202,21 @@ ordinal_mappings = {
     'BusinessTravel': ['Non-Travel', 'Travel_Rarely', 'Travel_Frequently']
     }
 
+mutual_info_columns = ["Department", "EducationField", "JobRole"]
+
 final_dataset = preprocess_data(final_dataset,
                                 impute_values=True,
                                 scale_data=True,
                                 encode_ordinal_cols=ordinal_mappings,
                                 encode_onehot_cols=True,
                                 remove_constant_cols=True,
-                                remove_from_encoding=['Attrition', 'Department','EducationField', 'JobRole']                                
+                                remove_from_encoding=["Attrition"] + mutual_info_columns
                                 )
 
-#######################
-# Analysis of Variance
-#######################
-numerical_columns = final_dataset.select_dtypes(include=[np.number]).columns.tolist()
-ordinal_mappings_keys = list(ordinal_mappings.keys())
 
-#######################
-# Mutual Information
-#######################
-mi_columns = ["Department", "EducationField", "JobRole"]
-
-##############################
-#Correlation verification
-##############################
+##############################################
+# Analysis of Variance and Mutual Information
+##############################################
 
 def annova_mi_with_target(data, target_column, exclude_patterns=None):
     """
@@ -278,9 +270,9 @@ anova_filtered_scores, mi_filtered_scores = annova_mi_with_target(
 print(f"\nANOVA Feature Importance:\n{anova_filtered_scores}")
 print(f"\nMutual Information Feature Importance:\n{mi_filtered_scores}")
 
-#########
+##########
 # Display
-#########
+##########
 
 def order_correlation(corr_series , ascending=False):
     ordered_corr = corr_series.sort_values(ascending=ascending)
@@ -309,7 +301,7 @@ if final_dataset[target_col].dtype == 'object':
     final_dataset[target_col] = final_dataset[target_col].apply(lambda x: 1 if str(x).lower() in ['yes', '1'] else 0)
 
 # Prepare X and y from the processed dataset
-X = final_dataset.drop(columns=[target_col], errors='ignore')
+X = final_dataset.drop(columns=[target_col] + mutual_info_columns, errors='ignore')
 y = final_dataset[target_col]
 
 # Split processed data
