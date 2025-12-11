@@ -8,6 +8,9 @@ import os
 import sklearn
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import f_classif, mutual_info_classif
+from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import Perceptron
+from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score, roc_curve, auc
 
 warnings.filterwarnings('ignore')
 
@@ -205,7 +208,7 @@ final_dataset = preprocess_data(final_dataset,
                                 encode_ordinal_cols=ordinal_mappings,
                                 encode_onehot_cols=True,
                                 remove_constant_cols=True,
-                                remove_from_encoding=['Attrition','EducationField','Department','JobRole']
+                                remove_from_encoding=['Attrition', 'Department','EducationField', 'JobRole']                                
                                 )
 
 #######################
@@ -299,3 +302,69 @@ def order_correlation(corr_series , ascending=False):
 #     print(f"\nDay-of-week correlations with Attrition:\n{day_of_week_corr}")
 
 # final_dataset = final_dataset[ordered_cols]
+target_col = 'Attrition'
+
+# Ensure Attrition is numeric
+if final_dataset[target_col].dtype == 'object':
+    final_dataset[target_col] = final_dataset[target_col].apply(lambda x: 1 if str(x).lower() in ['yes', '1'] else 0)
+
+# Prepare X and y from the processed dataset
+X = final_dataset.drop(columns=[target_col], errors='ignore')
+y = final_dataset[target_col]
+
+# Split processed data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+print(f"\nTraining with processed data. Shape: {X_train.shape}")
+
+perceptron = Perceptron(max_iter=2000, random_state=42)
+# Train the model
+perceptron.fit(X_train, y_train)
+
+# Cross validation
+scores = cross_val_score(perceptron, X_train, y_train, cv=5, scoring='accuracy')
+print("\n--- Cross Validation ---")
+print("scores: ", scores)
+print("Mean: ", scores.mean())
+print("Standard Deviation: ", scores.std())
+
+# Predictions
+y_pred = perceptron.predict(X_test)
+y_prob = perceptron._predict_proba_lr(X_test)[:, 1]
+
+# confusion matrix
+conf_matrix = confusion_matrix(y_test, y_pred)
+print("\nConfusion Matrix:\n", conf_matrix)
+
+# classification report
+class_report = classification_report(y_test, y_pred)
+print("Classification Report:\n", class_report)
+
+# AUC-ROC
+roc_auc = roc_auc_score(y_test, y_prob)
+print("AUC-ROC: ", roc_auc)
+
+# ROC Curve
+fpr, tpr, thresholds = roc_curve(y_test, y_prob)
+roc_auc_val = auc(fpr, tpr)
+print("AUC (computed): ", roc_auc_val)
+
+plt.figure()
+plt.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % roc_auc_val)
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic')
+plt.legend(loc="lower right")
+plt.show()
+
+
+for i in final_dataset.columns:
+    if ( i == "Department"):
+        print(final_dataset[i])
+    if ( i == "JobRole"):
+        print(final_dataset[i])
+    if ( i == "EducationField"):
+        print(final_dataset[i])
