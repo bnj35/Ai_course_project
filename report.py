@@ -181,6 +181,7 @@ final_dataset = pd.merge(final_dataset, time_data, on='EmployeeID')
 
 # split dataset into training and testing sets
 train_set, test_set = train_test_split(final_dataset, test_size=0.2, random_state=42)
+#todo: cross-validation of train_set
 
 # place the EmployeeID column at the front
 cols = final_dataset.columns.tolist()
@@ -188,12 +189,13 @@ cols.insert(0, cols.pop(cols.index('EmployeeID')))
 final_dataset = final_dataset[cols]
 
 # print to verify 
-
 # print(final_dataset.info())
 # print(final_dataset.head())
 
 #into pipeline
 ordinal_mappings = {
+    #shaun
+    'Education': ['Below College', 'College', 'Bachelor', 'Master', 'Doctor'],
     'EnvironmentSatisfaction': ['Low', 'Medium', 'High', 'Very High'],
     'JobInvolvement': ['Low', 'Medium', 'High', 'Very High'],
     'JobSatisfaction': ['Low', 'Medium', 'High', 'Very High'],
@@ -205,10 +207,22 @@ ordinal_mappings = {
 final_dataset = preprocess_data(final_dataset,
                                 impute_values=True,
                                 scale_data=True,
+                                encode_ordinal_cols=ordinal_mappings,
                                 encode_onehot_cols=True,
                                 remove_constant_cols=True,
                                 remove_from_encoding=['Attrition']
                                 )
+
+#######################
+# Analysis of Variance
+#######################
+numerical_columns = final_dataset.select_dtypes(include=[np.number]).columns.tolist()
+ordinal_mappings_keys = list(ordinal_mappings.keys())
+
+#######################
+# Mutual Information
+#######################
+mi_columns = ["Department", "EducationField", "JobRole"]
 
 ##############################
 #Correlation verification
