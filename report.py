@@ -242,6 +242,92 @@ raw_dataset.drop(columns=["MaritalStatus", "Gender", "Age"], inplace=True)
 print(f"Total dataset size: {len(raw_dataset)} samples")
 print(f"Features: {len(raw_dataset.columns)} columns")
 
+##############################
+# Feature Engineering
+##############################
+
+print("\n" + "="*70)
+print("ADVANCED FEATURE ENGINEERING")
+print("="*70)
+
+def create_advanced_features(df):
+    """
+    Create derived features with business logic to improve predictive power.
+    All features are created from raw data without any target leakage.
+    """
+    df = df.copy()
+    
+    # Career progression features
+    if 'YearsSinceLastPromotion' in df.columns:
+        df['YearsWithoutPromotion'] = df['YearsSinceLastPromotion']
+    
+    if 'YearsAtCompany' in df.columns and 'YearsSinceLastPromotion' in df.columns:
+        # Promotion rate: how frequently promoted relative to tenure
+        df['PromotionRate'] = df['YearsAtCompany'] / (df['YearsSinceLastPromotion'] + 1)
+    
+    if 'YearsInCurrentRole' in df.columns:
+        # Career stagnation indicator
+        df['CareerStagnation'] = (df['YearsInCurrentRole'] > 5).astype(int)
+    
+    # Compensation features
+    if 'MonthlyIncome' in df.columns and 'YearsAtCompany' in df.columns:
+        # Income per year of service
+        df['IncomePerYear'] = df['MonthlyIncome'] * 12 / (df['YearsAtCompany'] + 1)
+    
+    if 'PercentSalaryHike' in df.columns:
+        # Normalized salary growth
+        df['IncomeGrowthRate'] = df['PercentSalaryHike'] / 100
+    
+    # Work-life balance features
+    if 'duration_hours' in df.columns:
+        # Average daily working hours (assuming 260 working days per year)
+        df['AvgDailyHours'] = df['duration_hours'] / 260
+        # Overwork indicator (more than 9 hours per day)
+        df['Overwork'] = (df['AvgDailyHours'] > 9).astype(int)
+    
+    # Weekend work patterns
+    weekend_cols = ['worked_on_day_5', 'worked_on_day_6']  # Saturday and Sunday
+    if all(col in df.columns for col in weekend_cols):
+        weekend_work = df['worked_on_day_5'] + df['worked_on_day_6']
+        # Weekend worker indicator (worked more than 10 weekends)
+        df['WeekendWorker'] = (weekend_work > 10).astype(int)
+    
+    # Job satisfaction composite score
+    satisfaction_cols = ['JobSatisfaction', 'EnvironmentSatisfaction', 'WorkLifeBalance']
+    if all(col in df.columns for col in satisfaction_cols):
+        # Overall satisfaction average
+        df['OverallSatisfaction'] = (
+            df['JobSatisfaction'] + 
+            df['EnvironmentSatisfaction'] + 
+            df['WorkLifeBalance']
+        ) / 3
+        # Low satisfaction indicator
+        df['LowSatisfaction'] = (df['OverallSatisfaction'] < 2).astype(int)
+    
+    # High-risk profile: combination of risk factors
+    if all(col in df.columns for col in ['YearsWithoutPromotion', 'JobSatisfaction', 'WorkLifeBalance']):
+        df['HighRiskProfile'] = (
+            (df['YearsWithoutPromotion'] > 3) & 
+            (df['JobSatisfaction'] < 3) &
+            (df['WorkLifeBalance'] < 3)
+        ).astype(int)
+    
+    # Experience-income ratio
+    if 'TotalWorkingYears' in df.columns and 'MonthlyIncome' in df.columns:
+        df['ExperienceIncomeRatio'] = df['TotalWorkingYears'] / (df['MonthlyIncome'] / 1000 + 1)
+    
+    # Job change frequency
+    if 'NumCompaniesWorked' in df.columns and 'TotalWorkingYears' in df.columns:
+        df['JobChangeFrequency'] = df['NumCompaniesWorked'] / (df['TotalWorkingYears'] + 1)
+    
+    return df
+
+# Apply feature engineering BEFORE split to avoid leakage
+raw_dataset = create_advanced_features(raw_dataset)
+
+print(f"Features after engineering: {len(raw_dataset.columns)} columns")
+print("Advanced features created successfully")
+
 # CRITICAL: Split BEFORE any preprocessing to avoid data leakage
 train_set, test_set = train_test_split(raw_dataset, test_size=0.2, random_state=random_state, stratify=raw_dataset['Attrition'])
 
@@ -280,7 +366,7 @@ train_processed, fitted_scaler, fitted_imputers = preprocess_data_safe(
     remove_from_encoding=["Attrition"] + mutual_info_columns
 )
 
-print(f"✅ Train set preprocessed: {train_processed.shape}")
+print(f"Train set preprocessed: {train_processed.shape}")
 
 # Preprocess TEST set (use fitted transformers from train)
 test_processed, _, _ = preprocess_data_safe(
@@ -292,8 +378,8 @@ test_processed, _, _ = preprocess_data_safe(
     remove_from_encoding=["Attrition"] + mutual_info_columns
 )
 
-print(f"✅ Test set preprocessed: {test_processed.shape}")
-print(f"✅ NO DATA LEAKAGE: Scaler and imputers fitted only on train set")
+print(f"Test set preprocessed: {test_processed.shape}")
+print(f"NO DATA LEAKAGE: Scaler and imputers fitted only on train set")
 
 # Prepare X and y
 X_train_full = train_processed.drop(columns=[target_col] + [col for col in mutual_info_columns if col in train_processed.columns], errors="ignore")
@@ -341,7 +427,7 @@ print(feature_scores.head(20))
 top_k = len(feature_scores) 
 top_features = feature_scores.head(top_k).index.tolist()
 
-print(f"\n✅ Selected {top_k} features")
+print(f"\nSelected {top_k} features")
 print(f"Features: {', '.join(top_features[:10])}...")
 
 # Apply feature selection
@@ -360,104 +446,218 @@ X_test_selected = X_test_selected[feature_scores.head(top_k).index]
 ##############################
 
 print("\n" + "="*70)
-print("🔬 STEP 2: Finding Optimal SMOTE Strategy")
+print("STEP 2: Nested Cross-Validation for SMOTE Strategy")
 print("="*70)
 
-# Test different SMOTE strategies on SELECTED features
+# Use nested CV for more robust SMOTE strategy selection
+from sklearn.model_selection import StratifiedKFold
+from imblearn.pipeline import Pipeline as ImbPipeline
+
+# Inner CV for hyperparameter tuning
+inner_cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+
+# Test SMOTE strategies with proper validation
 smote_strategies = [0.3, 0.4, 0.5, 0.6, 0.7]
-best_smote_strategy = 0.5
-best_smote_f1 = 0
+smote_results = {}
 
+print("\nTesting SMOTE strategies with nested cross-validation...")
 for strategy in smote_strategies:
-    smote_temp = SMOTE(random_state=random_state, k_neighbors=10, sampling_strategy=strategy)
-    X_temp, y_temp = smote_temp.fit_resample(X_train_selected, y_train)
+    # Create pipeline to prevent leakage
+    pipeline = ImbPipeline([
+        ('smote', SMOTE(random_state=random_state, k_neighbors=10, sampling_strategy=strategy)),
+        ('classifier', Perceptron(max_iter=10000, random_state=random_state, tol=1e-3))
+    ])
     
-    # Quick test with basic Perceptron
-    perc_temp = Perceptron(max_iter=10000, random_state=random_state, tol=1e-3)
-    perc_temp.fit(X_temp, y_temp)
-    y_pred_temp = perc_temp.predict(X_test_selected)
+    # Cross-validate on training set
+    cv_scores = cross_val_score(pipeline, X_train_selected, y_train, cv=inner_cv, scoring='f1', n_jobs=-1)
+    smote_results[strategy] = cv_scores.mean()
     
-    cm_temp = confusion_matrix(y_test, y_pred_temp)
-    tn, fp, fn, tp = cm_temp.ravel()
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-    
-    print(f"  Strategy {strategy:.1f}: F1={f1:.3f}, Precision={precision:.3f}, Recall={recall:.3f}, Samples={len(y_temp[y_temp==0])}:{len(y_temp[y_temp==1])}")
-    
-    if f1 > best_smote_f1:
-        best_smote_f1 = f1
-        best_smote_strategy = strategy
+    print(f"  Strategy {strategy:.1f}: CV F1={cv_scores.mean():.3f} (std={cv_scores.std():.3f})")
 
-print(f"\n✅ Best SMOTE strategy: {best_smote_strategy} (F1={best_smote_f1:.3f})")
+# Select best strategy based on CV performance
+best_smote_strategy = max(smote_results, key=smote_results.get)
+best_smote_f1 = smote_results[best_smote_strategy]
+
+print(f"\nBest SMOTE strategy: {best_smote_strategy} (CV F1={best_smote_f1:.3f})")
 
 # Apply SMOTE with best strategy
 smote = SMOTE(random_state=random_state, k_neighbors=10, sampling_strategy=best_smote_strategy)
 X_train_balanced, y_train_balanced = smote.fit_resample(X_train_selected, y_train)
 
-print(f"\nOriginal: {pd.Series(y_train).value_counts().sort_index().to_dict()}")
-print(f"Balanced: {pd.Series(y_train_balanced).value_counts().sort_index().to_dict()}")
+print(f"\nClass distribution:")
+print(f"  Original: {pd.Series(y_train).value_counts().sort_index().to_dict()}")
+print(f"  After SMOTE: {pd.Series(y_train_balanced).value_counts().sort_index().to_dict()}")
 
 ###########
-# Training
+# Training with Ensemble Methods
 ###########
 
 print("\n" + "="*70)
-print("🔬 STEP 3: GridSearchCV - Optimizing Perceptron Hyperparameters")
+print("STEP 3: Ensemble Model Training with Optimized Hyperparameters")
 print("="*70)
 
-# Remove class_weight='balanced' to avoid double-counting with SMOTE
-param_grid = {
+# Define parameter grids for different models
+print("\n[1/3] Optimizing Perceptron...")
+param_grid_perceptron = {
     'penalty': [None, 'l2', 'l1', 'elasticnet'],
-    'alpha': [0.0001, 0.001, 0.01, 0.1],  # Added 0.1 for more regularization
-    'eta0': [0.5, 1.0, 1.5],  # Narrowed range
+    'alpha': [0.0001, 0.001, 0.01, 0.1],
+    'eta0': [0.5, 1.0, 1.5],
     'max_iter': [10000],
     'tol': [1e-3],
 }
 
-print(f"Testing {len(param_grid['penalty']) * len(param_grid['alpha']) * len(param_grid['eta0'])} combinations...")
-print("Note: Removed class_weight to avoid double-counting with SMOTE\n")
-
-grid_search = GridSearchCV(
+grid_search_perceptron = GridSearchCV(
     Perceptron(random_state=random_state),
-    param_grid,
+    param_grid_perceptron,
     cv=5,
     scoring='f1',
     n_jobs=-1,
     verbose=0
 )
+grid_search_perceptron.fit(X_train_balanced, y_train_balanced)
+print(f"Best Perceptron CV F1: {grid_search_perceptron.best_score_:.3f}")
+for param, value in grid_search_perceptron.best_params_.items():
+    print(f"  {param}: {value}")
 
-# Use X_train_balanced (after SMOTE) not X_train_selected
-grid_search.fit(X_train_balanced, y_train_balanced)
+# Optimize Logistic Regression
+print("\n[2/3] Optimizing Logistic Regression...")
+param_grid_logistic = {
+    'penalty': ['l2', 'l1'],
+    'C': [0.1, 0.5, 1.0, 2.0],
+    'solver': ['saga'],
+    'max_iter': [10000],
+}
 
-print(f"\n✅ Best parameters found:")
-for param, value in grid_search.best_params_.items():
-    print(f"   {param}: {value}")
-print(f"\n✅ Best CV F1-score: {grid_search.best_score_:.3f}")
+grid_search_logistic = GridSearchCV(
+    LogisticRegression(random_state=random_state),
+    param_grid_logistic,
+    cv=5,
+    scoring='f1',
+    n_jobs=-1,
+    verbose=0
+)
+grid_search_logistic.fit(X_train_balanced, y_train_balanced)
+print(f"Best Logistic Regression CV F1: {grid_search_logistic.best_score_:.3f}")
+for param, value in grid_search_logistic.best_params_.items():
+    print(f"  {param}: {value}")
 
+# Optimize Random Forest
+print("\n[3/3] Optimizing Random Forest...")
+param_grid_rf = {
+    'n_estimators': [50, 100],
+    'max_depth': [5, 10, None],
+    'min_samples_split': [5, 10],
+    'min_samples_leaf': [2, 4],
+}
+
+grid_search_rf = GridSearchCV(
+    RandomForestClassifier(random_state=random_state, n_jobs=-1),
+    param_grid_rf,
+    cv=3,  # Fewer folds for computational efficiency
+    scoring='f1',
+    n_jobs=-1,
+    verbose=0
+)
+grid_search_rf.fit(X_train_balanced, y_train_balanced)
+print(f"Best Random Forest CV F1: {grid_search_rf.best_score_:.3f}")
+for param, value in grid_search_rf.best_params_.items():
+    print(f"  {param}: {value}")
+
+# Create ensemble with optimized models
+print("\n" + "="*70)
+print("Building Ensemble Model (Voting Classifier)")
+print("="*70)
+
+from sklearn.ensemble import VotingClassifier
+
+perceptron_opt = grid_search_perceptron.best_estimator_
+logistic_opt = grid_search_logistic.best_estimator_
+rf_opt = grid_search_rf.best_estimator_
+
+# Hard voting for models without predict_proba (Perceptron)
+# Only use models that support probability estimates
+ensemble = VotingClassifier(
+    estimators=[
+        ('logistic', logistic_opt),
+        ('random_forest', rf_opt)
+    ],
+    voting='soft',  # Use soft voting with probabilities
+    weights=[1, 1]  # Equal weights
+)
+
+print("\nTraining ensemble model (Logistic + Random Forest)...")
+ensemble.fit(X_train_balanced, y_train_balanced)
+
+# Cross-validate ensemble
+ensemble_cv_scores = cross_val_score(ensemble, X_train_balanced, y_train_balanced, cv=5, scoring='f1')
+print(f"Ensemble CV F1: {ensemble_cv_scores.mean():.3f} (std={ensemble_cv_scores.std():.3f})")
+
+# Store all models for comparison
 models = {
-    "Perceptron_Optimized": grid_search.best_estimator_,
-    }
+    "Ensemble_Optimized": ensemble,
+    "RandomForest_Optimized": rf_opt,
+    "LogisticRegression_Optimized": logistic_opt,
+    "Perceptron_Optimized": perceptron_opt,
+}
+
+# Store grid_search for compatibility with later code
+grid_search = grid_search_perceptron
 
 print("\n" + "="*70)
-print("🚀 STEP 4: Final Model Training & Evaluation")
+print("STEP 4: Model Evaluation and Probability Calibration")
 print("="*70)
 
 for name, m in models.items():
     print("\n" + "="*70)
-    print(f"📊 {name} - FINAL RESULTS")
+    print(f"{name} - EVALUATION RESULTS")
     print("="*70)
     t_start = time.time()
     
-    # Model is already fitted from GridSearchCV
-    # Re-fit on full balanced training data to ensure consistency
-    m.fit(X_train_balanced, y_train_balanced)
+    # Model is already fitted, no need to refit
+    # m.fit(X_train_balanced, y_train_balanced)
     
     # Use F1 score for CV instead of accuracy (better for imbalanced data)
     x_val_scores_f1 = cross_val_score(m, X_train_balanced, y_train_balanced, cv=5, scoring="f1")
     print(f"\nCross-validation F1 mean {x_val_scores_f1.mean():.4f}, std dev {x_val_scores_f1.std():.4f}")
     
-    y_pred = m.predict(X_test_selected)
+    # Probability calibration for better threshold optimization
+    print("\n" + "-"*70)
+    print("Probability Calibration (Platt scaling)")
+    print("-"*70)
+    
+    from sklearn.calibration import CalibratedClassifierCV
+    
+    # For ensemble, use the already fitted model
+    # For other models, create calibration holdout set
+    if name == "Ensemble_Optimized":
+        # Use already fitted ensemble directly
+        calibrated_model = m
+        print("Using ensemble model (already optimized)")
+    else:
+        # Split training data for calibration
+        X_train_cal, X_val_cal, y_train_cal, y_val_cal = train_test_split(
+            X_train_balanced, y_train_balanced,
+            test_size=0.2,
+            random_state=random_state,
+            stratify=y_train_balanced
+        )
+        
+        # Create new instance of the same model type
+        from copy import deepcopy
+        m_uncal = deepcopy(m)
+        m_uncal.fit(X_train_cal, y_train_cal)
+        
+        # Calibrate probabilities
+        calibrated_model = CalibratedClassifierCV(
+            m_uncal,
+            method='sigmoid',  # Platt scaling
+            cv='prefit'
+        )
+        calibrated_model.fit(X_val_cal, y_val_cal)
+        print(f"Model calibrated using Platt scaling")
+    
+    # Get predictions from calibrated model
+    y_pred = calibrated_model.predict(X_test_selected)
     
     print("Confusion Matrix:")
     cm = confusion_matrix(y_test, y_pred)
@@ -469,7 +669,7 @@ for name, m in models.items():
     recall_class1 = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1_class1 = 2 * (precision_class1 * recall_class1) / (precision_class1 + recall_class1) if (precision_class1 + recall_class1) > 0 else 0
     
-    print(f"\n📊 Class 1 (Attrition) Metrics:")
+    print(f"\nClass 1 (Attrition) Metrics:")
     print(f"  Precision: {precision_class1:.3f} ({tp}/{tp+fp}) - How many alerts are real")
     print(f"  Recall:    {recall_class1:.3f} ({tp}/{tp+fn}) - How many attritions detected")
     print(f"  F1-Score:  {f1_class1:.3f} - Balance between precision/recall")
@@ -477,11 +677,13 @@ for name, m in models.items():
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred))
 
-    # Get probability scores based on model type
-    if hasattr(m, 'predict_proba'):
-        y_prob = m.predict_proba(X_test_selected)[:, 1]
-    elif hasattr(m, 'decision_function'):
-        y_prob = m.decision_function(X_test_selected)
+    # Get probability scores from calibrated model
+    if hasattr(calibrated_model, 'predict_proba'):
+        y_prob = calibrated_model.predict_proba(X_test_selected)[:, 1]
+        print(f"\nUsing calibrated probabilities for threshold optimization")
+    elif hasattr(calibrated_model, 'decision_function'):
+        y_prob = calibrated_model.decision_function(X_test_selected)
+        print(f"\nUsing calibrated decision scores for threshold optimization")
     else:
         print("Warning: Model doesn't support probability prediction, skipping ROC-AUC")
         continue
@@ -492,7 +694,7 @@ for name, m in models.items():
     
     # STEP 5: Optimize decision threshold
     print("\n" + "="*70)
-    print("🎯 STEP 5: Optimizing Decision Threshold")
+    print("STEP 5: Optimizing Decision Threshold")
     print("="*70)
     
     precisions, recalls, thresholds = precision_recall_curve(y_test, y_prob)
@@ -533,23 +735,27 @@ for name, m in models.items():
     
     improvement_pct = ((f1_opt - f1_class1) / f1_class1 * 100) if f1_class1 > 0 else 0
     
-    print(f"\n📉 DEFAULT Threshold (0.5):")
+    print(f"\nDEFAULT Threshold (0.5):")
     print(f"   Precision: {precision_class1:.3f} | Recall: {recall_class1:.3f} | F1: {f1_class1:.3f}")
     print(f"   Confusion Matrix: [[{tn:3d} {fp:3d}] [{fn:3d} {tp:3d}]]")
     
-    print(f"\n📈 OPTIMAL Threshold ({optimal_threshold:.4f}) - With Precision ≥ 35% constraint:")
+    print(f"\nOPTIMAL Threshold ({optimal_threshold:.4f}) - With Precision >= 35% constraint:")
     print(f"   Precision: {precision_opt:.3f} ({tp_opt}/{tp_opt+fp_opt}) - {precision_opt*100:.1f}% of alerts are real")
     print(f"   Recall:    {recall_opt:.3f} ({tp_opt}/{tp_opt+fn_opt}) - Detects {recall_opt*100:.1f}% of attritions")
-    print(f"   F1-Score:  {f1_opt:.3f} ⬆️  +{improvement_pct:.1f}% improvement")
+    print(f"   F1-Score:  {f1_opt:.3f} -> +{improvement_pct:.1f}% improvement")
     print(f"   Confusion Matrix: [[{tn_opt:3d} {fp_opt:3d}] [{fn_opt:3d} {tp_opt:3d}]]")
     
-    print(f"\n💡 Business Impact:")
-    print(f"   ✅ Detected: {tp_opt}/{tp_opt+fn_opt} attritions ({recall_opt*100:.1f}%)")
-    print(f"   ⚠️  Cost: Need to interview {tp_opt+fp_opt} employees ({fp_opt} unnecessary)")
-    print(f"   💰 Efficiency: {precision_opt*100:.1f}% of interventions are useful")
-    print(f"   ❌ Missed: {fn_opt} attritions will leave undetected")
+    print(f"\nBusiness Impact:")
+    print(f"   Detected: {tp_opt}/{tp_opt+fn_opt} attritions ({recall_opt*100:.1f}%)")
+    print(f"   Cost: Need to interview {tp_opt+fp_opt} employees ({fp_opt} unnecessary)")
+    print(f"   Efficiency: {precision_opt*100:.1f}% of interventions are useful")
+    print(f"   Missed: {fn_opt} attritions will leave undetected")
+    print(f"   Detected: {tp_opt}/{tp_opt+fn_opt} attritions ({recall_opt*100:.1f}%)")
+    print(f"   Cost: Need to interview {tp_opt+fp_opt} employees ({fp_opt} unnecessary)")
+    print(f"   Efficiency: {precision_opt*100:.1f}% of interventions are useful")
+    print(f"   Missed: {fn_opt} attritions will leave undetected")
 
-    print(f"\n⏱️  Time taken: {time.time() - t_start:.2f} seconds")
+    print(f"\nTime taken: {time.time() - t_start:.2f} seconds")
 
     distances = np.sqrt(fpr**2 + (1 - tpr)**2)
     min_idx = np.argmin(distances)
@@ -593,7 +799,7 @@ for name, m in models.items():
     
     # Feature Importance Analysis
     print("\n" + "="*70)
-    print("🔍 STEP 6: Feature Importance Analysis")
+    print("STEP 6: Feature Importance Analysis")
     print("="*70)
     
     # Get feature coefficients (weights) from the Perceptron
@@ -607,13 +813,13 @@ for name, m in models.items():
         # Sort by absolute value (impact regardless of direction)
         feature_importance = feature_importance.sort_values('Abs_Coefficient', ascending=False)
         
-        print("\n📊 Top 15 Features by Impact on Model:")
+        print("\nTop Features by Impact on Model:")
         print("="*70)
         for idx, row in feature_importance.iterrows():
             direction = "↑ increases" if row['Coefficient'] > 0 else "↓ decreases"
             print(f"{row['Feature']:30s} | Weight: {row['Coefficient']:+7.4f} | {direction} attrition risk")
         
-        print(f"\n💡 Interpretation:")
+        print(f"\nInterpretation:")
         print(f"   • Positive weights (+) → Feature increases attrition probability")
         print(f"   • Negative weights (−) → Feature decreases attrition probability")
         print(f"   • Larger absolute values → Stronger impact on predictions")
@@ -632,14 +838,14 @@ for name, m in models.items():
         plt.show()
         
         # Summary statistics
-        print(f"\n📈 Feature Importance Statistics:")
+        print(f"\nFeature Importance Statistics:")
         print(f"   • Most impactful (positive): {feature_importance.iloc[0]['Feature']} (+{feature_importance.iloc[0]['Coefficient']:.4f})")
         print(f"   • Most protective (negative): {feature_importance.loc[feature_importance['Coefficient'].idxmin()]['Feature']} ({feature_importance['Coefficient'].min():.4f})")
         print(f"   • Average absolute impact: {feature_importance['Abs_Coefficient'].mean():.4f}")
         print(f"   • Std dev of impact: {feature_importance['Abs_Coefficient'].std():.4f}")
     else:
-        print("⚠️  Model does not have feature coefficients (not a linear model)")
+        print("WARNING: Model does not have feature coefficients (not a linear model)")
     
 print("\n" + "="*70)
-print("✅ OPTIMIZATION COMPLETE!")
+print("OPTIMIZATION COMPLETE!")
 print("="*70)
