@@ -284,6 +284,8 @@ def create_advanced_features(df):
         df['AvgDailyHours'] = df['duration_hours'] / 260
         # Overwork indicator (more than 9 hours per day)
         df['Overwork'] = (df['AvgDailyHours'] > 9).astype(int)
+        # overtime indicator (more than 8 hours per day)
+        df['Overtime'] = (df['AvgDailyHours'] > 8).astype(int)
     
     # Weekend work patterns
     weekend_cols = ['worked_on_day_5', 'worked_on_day_6']  # Saturday and Sunday
