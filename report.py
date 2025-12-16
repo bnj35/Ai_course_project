@@ -3,23 +3,18 @@ import numpy as np
 import os
 import pandas as pd
 import time
-import warnings
-import sklearn
-from sklearn.preprocessing import StandardScaler
-from sklearn.feature_selection import f_classif, mutual_info_classif
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score, roc_curve, auc, precision_recall_curve
-from sklearn.model_selection import GridSearchCV
 
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.linear_model import LogisticRegression, Perceptron, SGDClassifier
-from sklearn.naive_bayes import BernoulliNB
-from sklearn.svm import LinearSVC, NuSVC
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 import imblearn
 from imblearn.over_sampling import SMOTE
-from sklearn.model_selection import train_test_split
+import sklearn
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_selection import f_classif, mutual_info_classif
+from sklearn.linear_model import LogisticRegression, Perceptron
+from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score, roc_curve, auc, precision_recall_curve
+from sklearn.model_selection import cross_val_score, train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
 
+import warnings
 warnings.filterwarnings("ignore")
 
 target_col = "Attrition"
@@ -326,8 +321,8 @@ def create_advanced_features(df):
 
 # Apply feature engineering BEFORE split to avoid leakage
 raw_dataset = create_advanced_features(raw_dataset)
-
 print(f"Features after engineering: {len(raw_dataset.columns)} columns")
+raw_dataset.drop(columns=["EmployeeID"], inplace=True)
 print("Advanced features created successfully")
 
 # CRITICAL: Split BEFORE any preprocessing to avoid data leakage
@@ -459,7 +454,13 @@ from imblearn.pipeline import Pipeline as ImbPipeline
 inner_cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
 
 # Test SMOTE strategies with proper validation
-smote_strategies = [0.3, 0.4, 0.5, 0.6, 0.7]
+smote_strategies = [
+    0.40, 0.41, 0.42, 0.43, 0.44, 0.45, 0.46, 0.47, 0.48, 0.49,
+    0.50, 0.51, 0.52, 0.53, 0.54, 0.55, 0.56, 0.57, 0.58, 0.59,
+    0.60, 0.61, 0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69,
+    0.70, 0.71, 0.72, 0.73, 0.74, 0.75, 0.76, 0.77, 0.78, 0.79,
+    0.80,
+    ]
 smote_results = {}
 
 print("\nTesting SMOTE strategies with nested cross-validation...")
@@ -474,13 +475,13 @@ for strategy in smote_strategies:
     cv_scores = cross_val_score(pipeline, X_train_selected, y_train, cv=inner_cv, scoring='f1', n_jobs=-1)
     smote_results[strategy] = cv_scores.mean()
     
-    print(f"  Strategy {strategy:.1f}: CV F1={cv_scores.mean():.3f} (std={cv_scores.std():.3f})")
+    print(f"  Strategy {strategy:.2f}: CV F1={cv_scores.mean():.6f} (std={cv_scores.std():.4f})")
 
 # Select best strategy based on CV performance
 best_smote_strategy = max(smote_results, key=smote_results.get)
 best_smote_f1 = smote_results[best_smote_strategy]
 
-print(f"\nBest SMOTE strategy: {best_smote_strategy} (CV F1={best_smote_f1:.3f})")
+print(f"\nBest SMOTE strategy: {best_smote_strategy} (CV F1={best_smote_f1:.6f})")
 
 # Apply SMOTE with best strategy
 smote = SMOTE(random_state=random_state, k_neighbors=10, sampling_strategy=best_smote_strategy)
