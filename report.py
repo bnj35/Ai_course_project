@@ -9,7 +9,6 @@ from imblearn.over_sampling import SMOTE
 import sklearn
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import f_classif, mutual_info_classif
-from sklearn.linear_model import LogisticRegression, Perceptron
 from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score, roc_curve, auc, precision_recall_curve
 from sklearn.model_selection import cross_val_score, train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
@@ -468,7 +467,7 @@ for strategy in smote_strategies:
     # Create pipeline to prevent leakage
     pipeline = ImbPipeline([
         ('smote', SMOTE(random_state=random_state, k_neighbors=10, sampling_strategy=strategy)),
-        ('classifier', Perceptron(max_iter=10000, random_state=random_state, tol=1e-3))
+        ('classifier', RandomForestClassifier(n_estimators=50, random_state=random_state, n_jobs=-1))
     ])
     
     # Cross-validate on training set
@@ -492,119 +491,49 @@ print(f"  Original: {pd.Series(y_train).value_counts().sort_index().to_dict()}")
 print(f"  After SMOTE: {pd.Series(y_train_balanced).value_counts().sort_index().to_dict()}")
 
 ###########
-# Training with Ensemble Methods
+# Training Random Forest Model
 ###########
 
 print("\n" + "="*70)
-print("STEP 3: Ensemble Model Training with Optimized Hyperparameters")
+print("STEP 3: Random Forest Model Training with Optimized Hyperparameters")
 print("="*70)
 
-# Define parameter grids for different models
-print("\n[1/3] Optimizing Perceptron...")
-param_grid_perceptron = {
-    'penalty': [None, 'l2', 'l1', 'elasticnet'],
-    'alpha': [0.0001, 0.001, 0.01, 0.1],
-    'eta0': [0.5, 1.0, 1.5],
-    'max_iter': [10000],
-    'tol': [1e-3],
-}
-
-grid_search_perceptron = GridSearchCV(
-    Perceptron(random_state=random_state),
-    param_grid_perceptron,
-    cv=5,
-    scoring='f1',
-    n_jobs=-1,
-    verbose=0
-)
-grid_search_perceptron.fit(X_train_balanced, y_train_balanced)
-print(f"Best Perceptron CV F1: {grid_search_perceptron.best_score_:.3f}")
-for param, value in grid_search_perceptron.best_params_.items():
-    print(f"  {param}: {value}")
-
-# Optimize Logistic Regression
-print("\n[2/3] Optimizing Logistic Regression...")
-param_grid_logistic = {
-    'penalty': ['l2', 'l1'],
-    'C': [0.1, 0.5, 1.0, 2.0],
-    'solver': ['saga'],
-    'max_iter': [10000],
-}
-
-grid_search_logistic = GridSearchCV(
-    LogisticRegression(random_state=random_state),
-    param_grid_logistic,
-    cv=5,
-    scoring='f1',
-    n_jobs=-1,
-    verbose=0
-)
-grid_search_logistic.fit(X_train_balanced, y_train_balanced)
-print(f"Best Logistic Regression CV F1: {grid_search_logistic.best_score_:.3f}")
-for param, value in grid_search_logistic.best_params_.items():
-    print(f"  {param}: {value}")
-
 # Optimize Random Forest
-print("\n[3/3] Optimizing Random Forest...")
+print("\nOptimizing Random Forest...")
 param_grid_rf = {
-    'n_estimators': [50, 100],
-    'max_depth': [5, 10, None],
-    'min_samples_split': [5, 10],
-    'min_samples_leaf': [2, 4],
+    'n_estimators': [50, 100, 150],
+    'max_depth': [5, 10, 15, None],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
 }
 
 grid_search_rf = GridSearchCV(
     RandomForestClassifier(random_state=random_state, n_jobs=-1),
     param_grid_rf,
-    cv=3,  # Fewer folds for computational efficiency
+    cv=5,
     scoring='f1',
     n_jobs=-1,
-    verbose=0
+    verbose=1
 )
 grid_search_rf.fit(X_train_balanced, y_train_balanced)
-print(f"Best Random Forest CV F1: {grid_search_rf.best_score_:.3f}")
+print(f"\nBest Random Forest CV F1: {grid_search_rf.best_score_:.3f}")
+print("\nBest parameters:")
 for param, value in grid_search_rf.best_params_.items():
     print(f"  {param}: {value}")
 
-# Create ensemble with optimized models
-print("\n" + "="*70)
-print("Building Ensemble Model (Voting Classifier)")
-print("="*70)
-
-from sklearn.ensemble import VotingClassifier
-
-perceptron_opt = grid_search_perceptron.best_estimator_
-logistic_opt = grid_search_logistic.best_estimator_
 rf_opt = grid_search_rf.best_estimator_
 
-# Hard voting for models without predict_proba (Perceptron)
-# Only use models that support probability estimates
-ensemble = VotingClassifier(
-    estimators=[
-        ('logistic', logistic_opt),
-        ('random_forest', rf_opt)
-    ],
-    voting='soft',  # Use soft voting with probabilities
-    weights=[1, 1]  # Equal weights
-)
+# Cross-validate the best model
+rf_cv_scores = cross_val_score(rf_opt, X_train_balanced, y_train_balanced, cv=5, scoring='f1')
+print(f"\nRandom Forest CV F1: {rf_cv_scores.mean():.3f} (std={rf_cv_scores.std():.3f})")
 
-print("\nTraining ensemble model (Logistic + Random Forest)...")
-ensemble.fit(X_train_balanced, y_train_balanced)
-
-# Cross-validate ensemble
-ensemble_cv_scores = cross_val_score(ensemble, X_train_balanced, y_train_balanced, cv=5, scoring='f1')
-print(f"Ensemble CV F1: {ensemble_cv_scores.mean():.3f} (std={ensemble_cv_scores.std():.3f})")
-
-# Store all models for comparison
+# Store model for evaluation
 models = {
-    "Ensemble_Optimized": ensemble,
     "RandomForest_Optimized": rf_opt,
-    "LogisticRegression_Optimized": logistic_opt,
-    "Perceptron_Optimized": perceptron_opt,
 }
 
 # Store grid_search for compatibility with later code
-grid_search = grid_search_perceptron
+grid_search = grid_search_rf
 
 print("\n" + "="*70)
 print("STEP 4: Model Evaluation and Probability Calibration")
@@ -630,34 +559,27 @@ for name, m in models.items():
     
     from sklearn.calibration import CalibratedClassifierCV
     
-    # For ensemble, use the already fitted model
-    # For other models, create calibration holdout set
-    if name == "Ensemble_Optimized":
-        # Use already fitted ensemble directly
-        calibrated_model = m
-        print("Using ensemble model (already optimized)")
-    else:
-        # Split training data for calibration
-        X_train_cal, X_val_cal, y_train_cal, y_val_cal = train_test_split(
-            X_train_balanced, y_train_balanced,
-            test_size=0.2,
-            random_state=random_state,
-            stratify=y_train_balanced
-        )
-        
-        # Create new instance of the same model type
-        from copy import deepcopy
-        m_uncal = deepcopy(m)
-        m_uncal.fit(X_train_cal, y_train_cal)
-        
-        # Calibrate probabilities
-        calibrated_model = CalibratedClassifierCV(
-            m_uncal,
-            method='sigmoid',  # Platt scaling
-            cv='prefit'
-        )
-        calibrated_model.fit(X_val_cal, y_val_cal)
-        print(f"Model calibrated using Platt scaling")
+    # Split training data for calibration
+    X_train_cal, X_val_cal, y_train_cal, y_val_cal = train_test_split(
+        X_train_balanced, y_train_balanced,
+        test_size=0.2,
+        random_state=random_state,
+        stratify=y_train_balanced
+    )
+    
+    # Create new instance of the same model type
+    from copy import deepcopy
+    m_uncal = deepcopy(m)
+    m_uncal.fit(X_train_cal, y_train_cal)
+    
+    # Calibrate probabilities
+    calibrated_model = CalibratedClassifierCV(
+        m_uncal,
+        method='sigmoid',  # Platt scaling
+        cv='prefit'
+    )
+    calibrated_model.fit(X_val_cal, y_val_cal)
+    print(f"Model calibrated using Platt scaling")
     
     # Get predictions from calibrated model
     y_pred = calibrated_model.predict(X_test_selected)
@@ -799,55 +721,6 @@ for name, m in models.items():
     plt.legend(loc="lower right", fontsize=10)
     plt.grid(True, alpha=0.3)
     plt.show()
-    
-    # Feature Importance Analysis
-    print("\n" + "="*70)
-    print("STEP 6: Feature Importance Analysis")
-    print("="*70)
-    
-    # Get feature coefficients (weights) from the Perceptron
-    if hasattr(m, 'coef_'):
-        feature_importance = pd.DataFrame({
-            'Feature': top_features,
-            'Coefficient': m.coef_[0],
-            'Abs_Coefficient': np.abs(m.coef_[0])
-        })
-        
-        # Sort by absolute value (impact regardless of direction)
-        feature_importance = feature_importance.sort_values('Abs_Coefficient', ascending=False)
-        
-        print("\nTop Features by Impact on Model:")
-        print("="*70)
-        for idx, row in feature_importance.iterrows():
-            direction = "↑ increases" if row['Coefficient'] > 0 else "↓ decreases"
-            print(f"{row['Feature']:30s} | Weight: {row['Coefficient']:+7.4f} | {direction} attrition risk")
-        
-        print(f"\nInterpretation:")
-        print(f"   • Positive weights (+) → Feature increases attrition probability")
-        print(f"   • Negative weights (−) → Feature decreases attrition probability")
-        print(f"   • Larger absolute values → Stronger impact on predictions")
-        
-        # Visualize feature importance
-        plt.figure(figsize=(12, 8))
-        colors = ['red' if x > 0 else 'green' for x in feature_importance['Coefficient']]
-        plt.barh(range(len(feature_importance)), feature_importance['Coefficient'], color=colors, alpha=0.7)
-        plt.yticks(range(len(feature_importance)), feature_importance['Feature'])
-        plt.xlabel('Coefficient Value (Impact on Attrition)', fontsize=12)
-        plt.ylabel('Feature', fontsize=12)
-        plt.title(f'{name} - Feature Importance\nRed = Increases Attrition Risk | Green = Decreases Attrition Risk', fontsize=14)
-        plt.axvline(x=0, color='black', linestyle='--', linewidth=1)
-        plt.grid(True, alpha=0.3, axis='x')
-        plt.tight_layout()
-        plt.show()
-        
-        # Summary statistics
-        print(f"\nFeature Importance Statistics:")
-        print(f"   • Most impactful (positive): {feature_importance.iloc[0]['Feature']} (+{feature_importance.iloc[0]['Coefficient']:.4f})")
-        print(f"   • Most protective (negative): {feature_importance.loc[feature_importance['Coefficient'].idxmin()]['Feature']} ({feature_importance['Coefficient'].min():.4f})")
-        print(f"   • Average absolute impact: {feature_importance['Abs_Coefficient'].mean():.4f}")
-        print(f"   • Std dev of impact: {feature_importance['Abs_Coefficient'].std():.4f}")
-    else:
-        print("WARNING: Model does not have feature coefficients (not a linear model)")
     
 print("\n" + "="*70)
 print("OPTIMIZATION COMPLETE!")
