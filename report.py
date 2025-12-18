@@ -493,9 +493,8 @@ print(f"  After SMOTE: {pd.Series(y_train_balanced).value_counts().sort_index().
 ###########
 # Training Random Forest Model
 ###########
-
 print("\n" + "="*70)
-print("STEP 3: Random Forest Model Training with Optimized Hyperparameters")
+print("Random Forest Model Training with Optimized Hyperparameters")
 print("="*70)
 
 # Optimize Random Forest
@@ -536,7 +535,7 @@ models = {
 grid_search = grid_search_rf
 
 print("\n" + "="*70)
-print("STEP 4: Model Evaluation and Probability Calibration")
+print("Model Evaluation and Probability Calibration")
 print("="*70)
 
 for name, m in models.items():
@@ -619,7 +618,7 @@ for name, m in models.items():
     
     # STEP 5: Optimize decision threshold
     print("\n" + "="*70)
-    print("STEP 5: Optimizing Decision Threshold")
+    print("Optimizing Decision Threshold")
     print("="*70)
     
     precisions, recalls, thresholds = precision_recall_curve(y_test, y_prob)
@@ -725,3 +724,13 @@ for name, m in models.items():
 print("\n" + "="*70)
 print("OPTIMIZATION COMPLETE!")
 print("="*70)
+
+
+# Print the best feature importance from the optimized Random Forest model
+importances = rf_opt.feature_importances_
+feature_names = X_train_selected.columns
+feature_importances = pd.Series(importances, index=feature_names).sort_values(ascending=False)
+print("\nTop Feature Importances from Optimized Random Forest:")
+print(feature_importances)
+
+
